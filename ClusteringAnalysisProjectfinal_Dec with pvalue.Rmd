@@ -1,0 +1,768 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+Intoduction: Handling the files: reading multiple csv files into the same dataframe-called RawData.
+Data will be organized into a specific template, some raws within the RawData will be extracted into a new dataframe - Those will be the data regarding the whole cells.
+This small dataframe will be organized, some data will be normalized and some will be added-dataframe is called CellsDataC.
+The rest, as well, will be assigned into a new dataframe- called Data2Handle: this data will be cleaned, reorganized and some rows will be eliminated-due to resolution issues.
+
+```{r}
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(tibble)
+library(stringr)
+library(reshape2)
+library(rlist)
+library(readr)
+library(purrr)
+library(dgof)
+library(car)
+library(Rmisc)
+#library(agricolae)
+library(jtools)
+library(xlsx)
+RawData <- list.files(full.names = TRUE) %>% 
+  lapply(read_csv) %>% 
+  bind_rows
+#Reading multiple csv files into the same dataframe, with only one Head # when the file only contains the data and the R-notebook
+
+Rdata <- RawData %>% drop_na(Label) #dropping NA rows
+Rdata <- Rdata[,-c(1)] #deleting extra non-informative columns that appears while reading the csv file to the dataframe
+Data2Handle <- Rdata%>%
+  separate(Label,c("Treatment","CellNumber"),sep = "_") #%>% #seperating the label column into 2 diffrenet columns labeled as treatment and cell number- these two variables identify diffrernt cells within the same treatment, both are needed in the next steps of analysis
+
+Data2Handle <- select(Data2Handle,-c(MinThr,MaxThr)) #deleting another 2 non-informative columns
+Data2Handle[Data2Handle$Treatment=='ShA1/2+ShB1/2+s97',]$Treatment <- c('2ShA+2ShB+s97')
+Data2Handle[Data2Handle$Treatment=='1ShA+1ShB+s97',]$Treatment <- c('2ShA+2ShB+s97')
+Data2Handle[Data2Handle$Treatment=='sha34+shb14+s97',]$Treatment <- c('3ShA+1ShB+s97')
+Data2Handle[Data2Handle$Treatment=='shb3+sha1+s97',]$Treatment <- c('1ShA+3ShB+s97')
+Data2Handle[Data2Handle$Treatment=='ShA4+ShB0+s97',]$Treatment <- c('4ShA+0ShB+s97')
+Data2Handle[Data2Handle$Treatment=='ShA0+ShB4+s97',]$Treatment <- c('0ShA+4ShB+s97')
+Data2Handle[Data2Handle$Treatment=='shb34+sha14+s97',]$Treatment <- c('1ShA+3ShB+s97')
+Data2Handle[Data2Handle$Treatment=='ShA3+ShB1+s97',]$Treatment <- c('3ShA+1ShB+s97')
+Data2Handle[Data2Handle$Treatment=='ShA1+ShB3+s97',]$Treatment <- c('1ShA+3ShB+s97')
+Data2Handle[Data2Handle$Treatment=='ShA2+ShB2+s97',]$Treatment <- c('2ShA+2ShB+s97')
+
+
+CellsDataC <- Data2Handle[Data2Handle$Area>100,] # subsetting the data for the whole cell into a new dataframe, in each csv file there is one row for the whole cell- these data contains information about cells 
+Data2Handle <- Data2Handle[Data2Handle$Area<100 ,] #eliminating the rows of data regarding the whole cells">300" and also the rows where the clusters area smaller than the resolution of the microscope
+CellsData <-  Data2Handle %>%
+  group_by(Treatment) %>%
+  group_by(CellNumber,.add = TRUE) %>%
+  dplyr::summarise(ClusterCount = n(),SumofRawIntDen=sum(RawIntDen),.groups = "keep") #grouping the cells data by treatment and cell number-both variables needed to identify unique cells from each other as written before- and then counting for each cell the cluster number(aka the rows in each file which belong to the specific cell)
+CellsDataC <- merge(CellsDataC,CellsData, by=c("Treatment","CellNumber"))
+#grouping the cells data by treatment and cell number-both variables needed to identify unique cells from each other as written before- and then counting for each cell the cluster number(aka the rows in each file which belong to the specific cell)
+CellsDataC <- CellsDataC %>%
+  mutate(ClustersNumberPerCell=ClusterCount/Area,
+         non_normlizedClusterNumber=ClusterCount,
+         CellSurfaceExpression=RawIntDen/Area,
+         FractionofChannelsinClusters=SumofRawIntDen/RawIntDen)
+CellsDataC <- CellsDataC[,-9]
+#CellsDataC$ClustersNumberPerCell <- CellsData$ClusterCount/CellsDataC$Area
+#CellsDataC$non_normlizedClusterNumber<- CellsData$ClusterCount#adding the vairable ClusterCount to the CellsDataC
+#CellsDataC$CellSurfaceExpression <- CellsDataC$RawIntDen/CellsDataC$Area #adding the vairable CellSurfaceExpression to the CellsDataC- defined as the clusternumbers per cell normalized to the whole cell area (since a higher area of membrane will contain as well a higher number of clusters)  
+#CellsDataC$FractionofChannelsinClusters=CellsData$SumofRawIntDen/CellsDataC$RawIntDen
+#CellsDataC$SumofRawIntDen <- CellsData$SumofRawIntDen
+#CellsDataC #showing the data to have a general look
+
+
+Data2Handle <-Data2Handle %>%
+  mutate(Density= RawIntDen/Area) # adding a new variable calculated by the area and RawIntDen variables in the data for each cluster in the cells, defined as Density
+Data2Handle<- Data2Handle[,-9]#showing the data to have a general look
+Data2Handle
+CellsDataC
+
+CellsData_sum <-  Data2Handle %>%
+  group_by(Treatment) %>%
+  group_by(CellNumber,.add = TRUE) %>%
+  dplyr::summarise(ClusterCount = n(),MeanDen = mean(Density),MeanArea = mean(Area),Standardddensity= sd(Density),StandarddArea= sd(Area),.groups = "keep")
+write.csv(CellsData_sum,"CellsData_sum.csv", row.names = TRUE)
+
+write.xlsx(CellsDataC,"CellsDataC_sum.xlsx", row.names = TRUE)
+```
+
+User must give as an input the number of variables he wants to be analyzed and their exact names as they show up in the Data: Data2Handle or CellsDataC.
+the input in the variable VariableToAnalyze will be used in next chunks to decide whether to run a specific commands or not-that is to run only the parts for the variables shows in VariableToAnalyze as the user decide However, rigth now this chunk is deactivated- and the value of VariableToAnalyze has been assigned as all the variables to be analyzed .
+
+```{r}
+numberofvar <- as.integer(readline(prompt=paste("How many you want to analyze:"))) #asking the user to decide how many variables he want to analyze 
+numvec <- c(1:numberofvar) # creating vector of number according to the varaible number input in the previous command
+inputvec <- function(num=0)#function to take multiple variable names
+  #argument: the number of the variable to take as an input, to show to it to the user
+  #value: the exact name of the variable to analyse -as it showes in the dataframe
+{
+  vec <- readline(prompt=paste("what is your", num, "variable exact name "))
+  return(vec)
+}
+VariableToAnalyze <- sapply(numvec, inputvec)# vectorized command to take as an input the exact names of the variables to be analyzed
+```
+
+The next chuck will process the Data for the specific variables given in VariableToAnalyze: the function will perform Kolmogorov-Smirnov Normality test and Levene's test for homoscedasticity.
+The result for the variables will be assigned in a new dataframe with the proper column names.
+Note: True in the new dataframe-indicate4transformationAll stands for p-value<0.05 (aka the assumption is violated)
+
+```{r}
+DeterminePropTest <- function(VarName,Data)
+  #description of the function: the function accept as an argumnt the variable name as it displayed in the data and check homogeneity of variance across groups and normality of residuals
+  #argument-the name of variable to check and the data
+  #value- vector of logical values (true stands for assumption violation) the 1st-homogeneity-levene's test, the 2nd- Kolmogorov-Smirnov Tests
+{
+names(Data)[names(Data) == VarName] <- "VarName" #in order to perform the test on a specific variable, changing the name of this variable to VarName- this make it easier to generalize the code, thus it could handle all the variable names as will be seen in next commands
+  Model  = lm(VarName ~ Treatment,
+              data=Data) #creating the model for Anova- defining the dependent and independent variables 
+Anova(Model)   
+summary(Model)
+#all these parameters sets the model for further analysis
+vec <- as.integer(readline(prompt=paste("Do you want to see the plots (Residuals Histogram and Residuals vs. predicted values) of the variable",VarName,"Yes-1, No-0 "))) #according to the user choice-shows or not-the plots to assess the data by himself in addition to the test carried out in the function
+if (vec==1) 
+  {hist(residuals(Model),col="darkgray")
+#plot(fitted(Model),residuals(Model)) #plotting the fitted data to see The distribution of these residuals as it should be approximately normal.
+qqnorm(Model$residuals)  # Another method of looking at the residuals normality
+qqline(Model$residuals)# setting the normal line, in order to assist the residuals normality
+pvaluelevene <- leveneTest(VarName ~ Treatment,data=Data,center=mean)[1,3] #assigning the p-value of levens test into a new variable
+pvalueks <- ks.test(Model$residuals,pnorm,mean(Model$residuals),sd(Model$residuals))[[2]] #assigning the p-value of ks into a new variable
+return (c(pvaluelevene<0.01,pvalueks<0.01)) #returning both values
+}else
+{pvaluelevene <- leveneTest(VarName ~ Treatment,data=Data,center=mean)[1,3]#assigning the p-value of levens test into a new variable
+pvalueks <- ks.test(Model$residuals,pnorm,mean(Model$residuals),sd(Model$residuals))[[2]]#assigning the p-value of ks into a new variable
+return (c(pvaluelevene<0.01,pvalueks<0.01))} #returning both values
+}
+#result4Transofrmation <- DeterminePropTest("ClustersNumberPerCell", CellsDataC)
+#VariableToAnalyze <- c('ClustersNumberPerCell','Density','Area','CellSurfaceExpression')
+#x <- VariableToAnalyze[VariableToAnalyze=='ClustersNumberPerCell']
+indicate4transformationW <- t(sapply(VariableToAnalyze[VariableToAnalyze=='ClustersNumberPerCell'|VariableToAnalyze=='CellSurfaceExpression'|VariableToAnalyze=='FractionofChannelsinClusters'], DeterminePropTest, CellsDataC)) #subsetting the variables name belongging to the dataframe CellsDataC, on these variables, the function is called
+indicate4transformationC <- t(sapply(VariableToAnalyze[VariableToAnalyze=='Area'|VariableToAnalyze=='Density'], DeterminePropTest, Data2Handle)) #subsetting the variables name belongging to the dataframe Data2Handle, on these variables, the function is called
+# a result of True for both columns stands for a need of transformation in the variable- shows in name of the row 
+if (length(indicate4transformationC)!=0){ # this condition is to handle a situation where is no variables given by the user in the second chunk
+  colnames(indicate4transformationC) <- c("Levene's test", "Kolmogorov-Smirnov Tests") #setting the column names
+  indicate4transformationC #showingg the results
+  indicate4transformationC <- as.data.frame(indicate4transformationC) %>%
+  add_column(VarN=VariableToAnalyze[VariableToAnalyze=='Area'|VariableToAnalyze=='Density'],.before=1) #adding a new column with the variable names
+row.names(indicate4transformationC) <- NULL #resetting the the rownames
+indicate4transformationC
+}
+ if (length(indicate4transformationW)!=0){ # this condition is to handle a sitution where is no variables given by the user in the second chunk 
+  colnames(indicate4transformationW) <- c("Levene's test", "Kolmogorov-Smirnov Tests")#setting the column names
+  indicate4transformationW #showingg the results
+indicate4transformationW <- as.data.frame(indicate4transformationW) %>%
+  add_column(VarN=VariableToAnalyze[VariableToAnalyze=='ClustersNumberPerCell'|VariableToAnalyze=='CellSurfaceExpression'|VariableToAnalyze=='FractionofChannelsinClusters'],.before=1) #adding a new column with the variable names
+row.names(indicate4transformationW) <- NULL #resetting the the rownames
+indicate4transformationW
+}
+indicate4transformationAll <- rbind.data.frame(indicate4transformationC,indicate4transformationW) #bindingg the dataframes togather
+indicate4transformationAll
+```
+
+This chunk is responsible for calculating the transformation when ever needed.
+the transformation type is determined by an Manual calibration of my own data behavior.
+also here the transformation is carried out only when the data met the conditions to perform one (when both assumptions: normality and homoscedasticity, are violated) Note: I used the "-\>\>" whitch makes the data global, This allowed me to change and update directly both dataframes whenever i needed(CellsDataC/Data2Handle)
+
+```{r}
+trans.log <- function(x){return(log2(x))} #mathmatical function for transformation calculation
+trans.sqrt <- function(x){return(sqrt(x+0.5))} #mathmatical function for transformation calculation
+trans.receip <- function(x){return(1/(x))} #mathmatical function for transformation calculation
+#old <- Data2Handle
+#Data2Handle <- backup
+TransUpdate <- function(VarRow)
+  #function description: the function accept as arggument/input a row of dataframe, containeing 3 columns. the first row is the variable needed to tranform the second and the third are the result of levenes and ks test - True stands for a p-value lower than 0.05 (both true stands for a need of transformation of the data for this specific variable)
+  #outpot is a dataframe updated with a column of transformated data of variable
+{
+  #VarRow <- indicate4transformation[2,]
+  Data2Handle<<-Data2Handle # changing the dataframe of each cluster to be global/ also shows in the function itself
+  CellsDataC<<-CellsDataC# changing the dataframe of the whole cells to be global/ also shows in the function itself
+  if (VarRow[1] %in% c("Density","Area")) #checking if the variable belong to the data of clusters
+  {
+    if (VarRow[1]=="Density"){ #if the variable in the argument is density, then calculating the appropriate type of transformation for the density
+      Data2Handle$Density.trans<<- sapply(Data2Handle$Density,trans.sqrt)
+    } else{ #if the variable in the argument is Area, then calculating the appropriate type of transformation for the area
+      Data2Handle$Area.trans<<- sapply(Data2Handle$Area,trans.log)}
+  }else #otherwise, the variable belong to the whole cell data
+  {
+    if (VarRow[1]=='CellSurfaceExpression'){CellsDataC$CellSurfaceExpression.trans <<- sapply(CellsDataC$CellSurfaceExpression,trans.sqrt)} #if the variable in the argument is CellSurfaceExpression, then calculating the appropriate type of transformation for the CellSurfaceExpression
+      else{CellsDataC$ClustersNumberPerCell.trans <<- sapply(CellsDataC$ClustersNumberPerCell,trans.receip)} #if the variable in the argument is ClustersNumberPerCell, then calculating the appropriate type of transformation for the ClustersNumberPerCell
+  }
+  
+  CellsDataC<<-CellsDataC
+  Data2Handle<<-Data2Handle 
+}
+if(!is.null(indicate4transformationAll)){
+apply(indicate4transformationAll[indicate4transformationAll$`Levene's test`==T & indicate4transformationAll$`Kolmogorov-Smirnov Tests`==T,],MARGIN=1,TransUpdate)} #applying the function on the data frame
+#please pay attention, the apply is suitable for updating global variables
+Data2Handle
+CellsDataC
+
+```
+
+This chunk contain all the possible statistics test suitable for a numeric dependent variable and a independent variable with more then two levels.
+This is needed since i have partial data for now, i don't know whether my data will violate both assumption in the future or not, so just in case.
+The tests will be performed according to indicate4transformationAll results.
+When the conditions aren't met, A Null dataframe will be sent to the test so no result will be shown.
+As it could be seen my partial data will need ANOVA (after transformation/ with no transformation)
+
+```{r}
+
+welchtest <- function(varname, Data)
+  # description: the function takes as an argument a variable that is found in the data, along with variable needed to be tested the function takes also the data itself.
+  #output: Null, the function shows the result of welch test of the variable
+{
+  names(Data)[names(Data) == varname] <- "varname" #changing the column name-in the argumnets- to varname, this helps generlaizing the code, so it would run in each variable name
+  oneway.test(varname ~ Treatment,
+            data=Data,
+            var.equal=FALSE) #performing the test
+}
+print("Welch test result if the conditions are met is below")
+CWelch <- sapply(indicate4transformationAll[indicate4transformationAll$`Levene's test`==T & indicate4transformationAll$`Kolmogorov-Smirnov Tests`==F & (indicate4transformationAll$VarN=='Area'|indicate4transformationAll$VarN=='Density'),1], welchtest, Data2Handle)
+sapply(indicate4transformationAll[indicate4transformationAll$`Levene's test`==T & indicate4transformationAll$`Kolmogorov-Smirnov Tests`==F & (indicate4transformationAll$VarN=='CellSurfaceExpression'|indicate4transformationAll$VarN=='ClustersNumberPerCell'),1], welchtest, CellsDataC)
+#both commands send the the two diffrenet Dataframe i have to the function for welch-test with the relavant variable name, only when the result of levens and Kolmogorov-Smirno is T,F respectivly - that is heteroscedasticity is found in the diffrent groups. this is done by sending the appropriate dataframe with the variable to test.
+####################
+
+KWtest <- function(varname, Data)
+  # description: the function takes as an argument a variable that is found in the data, along with variable needed to be tested the function takes also the data itself.
+  #output: Null, the function shows the result of Kruskal-walis test of the variable
+{
+  names(Data)[names(Data) == varname] <- "varname" #changing the column name-in the argumnets- to varname, this helps generlaizing the code, so it would run in each variable name
+  kruskal.test(varname ~ Treatment,
+                data = Data) #performing the test
+}
+print("Kruskal-Wallis test result if the conditions are met is below")
+sapply(indicate4transformationAll[indicate4transformationAll$`Levene's test`==F & indicate4transformationAll$`Kolmogorov-Smirnov Tests`==T & (indicate4transformationAll$VarN=='Area'|indicate4transformationAll$VarN=='Density'),1], KWtest, Data2Handle)
+sapply(indicate4transformationAll[indicate4transformationAll$`Levene's test`==F & indicate4transformationAll$`Kolmogorov-Smirnov Tests`==T & (indicate4transformationAll$VarN=='CellSurfaceExpression'|indicate4transformationAll$VarN=='ClustersNumberPerCell'),1], KWtest, CellsDataC)
+#both commands send the the two diffrenet Dataframe i have to the function for kruskal-wallis, only when the result of levens and Kolmogorov-Smirno is F,T respectivly - that is Normality assumption is violated. this is done each time by sending the appropriate dataframe with the variable to test.
+#############
+
+
+Anovatest <- function(varname, Data)
+  # description: the function takes as an argument a variable that is found in the data, along with variable needed to be tested the function takes also the data itself.
+  #output: Null, the function shows the result of Anova test of the variable
+{
+  names(Data)[names(Data) == varname] <- "varname"
+  Model  = lm(varname ~ Treatment,
+              data=Data) #creating the model for Anova- defining the dependent and independent variables (Variable to analysis and Treatment respectively)
+c <- c(unlist(anova(Model)[1,4:5]) )#
+return(c)
+}
+#############
+
+print("ANOVA test result if the conditions are met is below")
+new4anova <- indicate4transformationAll[(indicate4transformationAll$`Levene's test`==F & indicate4transformationAll$`Kolmogorov-Smirnov Tests`==F) |(indicate4transformationAll$`Levene's test`==T & indicate4transformationAll$`Kolmogorov-Smirnov Tests`==T),] #subsetiing the variables suitable for ANOVA test (transformed data and data which is Normal and has homogeneity of variances), from the result dataframe of levens and Kolmogorov-Smirnov.
+
+new4anova[(indicate4transformationAll$`Levene's test`==T & indicate4transformationAll$`Kolmogorov-Smirnov Tests`==T),]$VarN <- sapply(new4anova[(indicate4transformationAll$`Levene's test`==T & indicate4transformationAll$`Kolmogorov-Smirnov Tests`==T),]$VarN,paste,sep=".","trans")
+#updating the results dataframe first column when the variable in the row is transformated.
+
+AnovaresC <- sapply(new4anova[(new4anova$VarN=="Density.trans" | new4anova$VarN=="Area.trans" |new4anova$VarN=="Density" | new4anova$VarN=="Area"),1],Anovatest, Data2Handle)
+#appling ANOVA on the variables suited with the test in the Dataframe of the clusters
+AnovaresW <- sapply(new4anova[(new4anova$VarN=="CellSurfaceExpression.trans" | new4anova$VarN=="ClustersNumberPerCell.trans"|new4anova$VarN=="CellSurfaceExpression" | new4anova$VarN=="ClustersNumberPerCell"),1],Anovatest, CellsDataC)
+#appling ANOVA on the variables suited with the test in the Dataframe of whole cells
+
+AnovaresC
+AnovaresW
+
+
+
+
+```
+
+this
+
+```{r}
+#check differences in FractionofChannelsinClusters
+AnovaresW_3 <- sapply("FractionofChannelsinClusters",Anovatest, CellsDataC)
+AnovaresW_3
+
+#check 
+#ModelFraction  = lm(FractionofChannelsinClusters ~ Treatment,
+#              data=CellsDataC) #creating the model for Anova- defining the dependent and independent variables (Variable to analysis and Treatment respectively)
+#summary(ModelFraction)
+```
+
+In this chuck a Tuckey pairwise multiple comparison (post-hoc) is done for all the variables.
+
+```{r}
+library(agricolae)
+#in all those commands a tukey multiple comparsion test is carried out
+if ("Density" %in% VariableToAnalyze){
+model  = lm(Density.trans ~ Treatment,
+              data=Data2Handle) #creating the model for Anova- defining the dependent and independent variables (Variable to analysis-Density.trans and Treatment respectively)
+PWDensity <- (HSD.test(model, "Treatment", group = F)) #tukey test
+PWDensity}
+if ("Area" %in% VariableToAnalyze){
+Model  = lm(Area.trans ~ Treatment,
+              data=Data2Handle) #creating the model for Anova- defining the dependent and independent variables (Variable to analysis-Area.trans and Treatment respectively)
+PWArea <- (HSD.test(Model, "Treatment", group = F)) #tukey test
+PWArea}
+if ("ClustersNumberPerCell" %in% VariableToAnalyze){
+Model  = lm(ClustersNumberPerCell ~ Treatment,
+              data=CellsDataC) #creating the model for Anova- defining the dependent and independent variables (Variable to analysis-ClustersNumberPerCell and Treatment respectively)
+PWClustersNumberPerCell <- (HSD.test(Model, "Treatment", group = F)) #tukey test
+PWClustersNumberPerCell}
+if ("CellSurfaceExpression" %in% VariableToAnalyze){
+Model  = lm(CellSurfaceExpression ~ Treatment,
+              data=CellsDataC) #creating the model for Anova- defining the dependent and independent variables (Variable to analysis-CellSurfaceExpression and Treatment respectively)
+PWCellSurfaceExpression <- (HSD.test(Model, "Treatment", group = F)) #tukey test
+PWCellSurfaceExpression}
+
+new_model=lm(FractionofChannelsinClusters ~ Treatment,
+              data=CellsDataC)
+PWFractionofChannelsinClusters <- HSD.test(new_model, "Treatment", group = F)
+PWFractionofChannelsinClusters
+```
+
+new try
+
+```{r}
+library(agricolae)
+#in all those commands a tukey multiple comparsion test is carried out
+if ("Density" %in% VariableToAnalyze){
+model  = lm(Density.trans ~ Treatment,
+              data=Data2Handle) #creating the model for Anova- defining the dependent and independent variables (Variable to analysis-Density.trans and Treatment respectively)
+PWDensity <- (HSD.test(model, "Treatment", group = T)) #tukey test
+PWDensity}
+if ("Area" %in% VariableToAnalyze){
+Model  = lm(Area.trans ~ Treatment,
+              data=Data2Handle) #creating the model for Anova- defining the dependent and independent variables (Variable to analysis-Area.trans and Treatment respectively)
+PWArea <- (HSD.test(Model, "Treatment", group = T)) #tukey test
+PWArea}
+if ("ClustersNumberPerCell" %in% VariableToAnalyze){
+Model  = lm(ClustersNumberPerCell ~ Treatment,
+              data=CellsDataC) #creating the model for Anova- defining the dependent and independent variables (Variable to analysis-ClustersNumberPerCell and Treatment respectively)
+PWClustersNumberPerCell <- (HSD.test(Model, "Treatment", group = T)) #tukey test
+PWClustersNumberPerCell}
+if ("CellSurfaceExpression" %in% VariableToAnalyze){
+Model  = lm(CellSurfaceExpression ~ Treatment,
+              data=CellsDataC) #creating the model for Anova- defining the dependent and independent variables (Variable to analysis-CellSurfaceExpression and Treatment respectively)
+PWCellSurfaceExpression <- (HSD.test(Model, "Treatment", group = T)) #tukey test
+PWCellSurfaceExpression}
+
+new_model=lm(FractionofChannelsinClusters ~ Treatment,
+              data=CellsDataC)
+PWFractionofChannelsinClusters <- HSD.test(new_model, "Treatment", group = T)
+PWFractionofChannelsinClusters
+```
+
+Summerizing the data for the variable CellSurfaceExpression, calculation the standard error for a bar plot with se.
+the sammerized data will be used to create bar plot with standard error shown in the bars.
+the summerized data will be saved in a diiferent path as a csv file
+
+```{r}
+if ("CellSurfaceExpression" %in% VariableToAnalyze){ #if the user wants to analyze this variable
+Data1 = summarySE(data=CellsDataC,
+             "CellSurfaceExpression",
+             groupvars="Treatment",
+             conf.interval = 0.95) #creatingg a new summery dataframe gor plotting purposes
+datai <- as.data.frame(PWCellSurfaceExpression$groups) # changing the tukey result for this variable into a dataframe- in order to extract the group from it, whitch shows wether two levels within the tested variable differ significatly
+datai$Treatment <- row.names(PWCellSurfaceExpression$groups) #adding a column for treatment datai, for the next step
+Data1 <- merge(Data1,datai[,-1], by="Treatment")# assigning this into the summery data
+offset.v = -3 # offsets for mean letters 
+offset.h = 0.8
+plot_1 <- ggplot(Data1,
+            aes(x = Treatment, y = CellSurfaceExpression,
+                ymax=2.0, ymin=0.0))  +
+            geom_bar(stat="identity", fill="dark green",
+colour = "dark green", width = 0.7) + geom_errorbar(aes(ymax=CellSurfaceExpression+se, ymin=CellSurfaceExpression-se),
+width=0.2, size=0.5, color="black") + geom_text(aes(label=groups,
+                      hjust=0.8, vjust=-4)) +
+            labs(x = "Different ratio of Both Variants ShA and ShB",
+                 y = "Mean CellSurfaceExpression-Clusters/Area size(um^2)")  +
+             ggtitle("Normalized Mean CellSurfaceExpression in different ShB/ShA ratios") +
+            theme_bw()  +
+            theme(plot.title = element_text(size = rel(1.2),
+                  face = "bold", vjust = 1.5),
+                  axis.title = element_text(face = "bold"),
+                  axis.title.y = element_text(vjust= 1.8),
+                  axis.title.x = element_text(vjust= -0.5),
+                  axis.text.x=element_text( size=7),
+                  panel.border = element_rect(colour="black"),
+                  panel.grid.major = element_blank(), 
+                  panel.grid.minor = element_blank(),
+                  panel.background = element_blank(), 
+                  axis.line = element_line(colour = "black"))
+print(plot_1+  annotate("text", label = "", y = 1.9,x=5, size = 3)) #setting the plot as needed
+write.csv(Data1,"CellSurfaceExpressionSummery.csv", row.names = TRUE)
+}
+```
+
+Summerizing the data for the variable CellSurfaceExpression, calculation the standard error for a bar plot with se.
+the sammerized data will be used to create bar plot with standard error shown in the bars .
+the summerized data will be saved in a diiferent path as a csv file
+
+```{r}
+if ("ClustersNumberPerCell" %in% VariableToAnalyze){ #if the user choose to analyze this variable, result shows
+Data2 = summarySE(data=CellsDataC,
+             "ClustersNumberPerCell",
+             groupvars="Treatment",
+             conf.interval = 0.95)#creatingg a new summery dataframe gor plotting purposes
+datai <- as.data.frame.list(PWClustersNumberPerCell$groups)# changing the tukey result for this variable into a dataframe- in order to extract the group from it, whitch shows wether two levels within the tested variable differ significatly
+datai$Treatment <- row.names(PWClustersNumberPerCell$groups)#adding a column for treatmet datai, for the next step
+Data2 <- merge(Data2,datai[,-1], by="Treatment")# assigning this into the summery data
+offset.v = -3 # offsets for mean letters 
+offset.h = 0.8
+plot_2 <- ggplot(Data2,
+            aes(x = Treatment, y = ClustersNumberPerCell,
+                ymax=1.0, ymin=0.0))  +
+            geom_bar(stat="identity", fill="black",
+colour = "black", width = 0.7) + geom_errorbar(aes(ymax=ClustersNumberPerCell+se, ymin=ClustersNumberPerCell-se),
+width=0.2, size=0.5, color="black") + geom_text(aes(label=groups,
+                      hjust=1.4, vjust=-3)) +
+            labs(x = "Different ratio of Both Variants ShA and ShB",
+                 y = "Mean ClustersNumberPerCell Per cell")  +
+             ggtitle("Normalized Mean ClustersNumberPerCell in different ShB/ShA ratios") +
+            theme_bw()  +
+            theme(plot.title = element_text(size = rel(1.2),
+                  face = "bold", vjust = 1.5),
+                  axis.title = element_text(face = "bold"),
+                  axis.title.y = element_text(vjust= 1.8),
+                  axis.title.x = element_text(vjust= -0.5),
+                  axis.text.x=element_text( size=7),
+                  panel.border = element_rect(colour="black"),
+                  panel.grid.major = element_blank(), 
+                  panel.grid.minor = element_blank(),
+                  panel.background = element_blank(), 
+                  axis.line = element_line(colour = "black"))
+print(plot_2+  annotate("text", label = "", y =0.7,x=5, size = 3))
+write.csv(Data2,"ClustersNumberPerCellSummery.csv", row.names = TRUE)}
+```
+
+Summerizing the data for the variable CellSurfaceExpression, calculation the standard error for a bar plot with se.
+the sammerized data will be used to create bar plot with standard error shown in the bars and also will be used for creating a boxplot for this variable.
+"Density" The summerized data will be saved in a diiferent path as a csv file.
+
+```{r}
+if ("Density" %in%VariableToAnalyze){ #if the user wants to analyze this variable, the results show
+Data3 = summarySE(data=Data2Handle,
+             "Density",
+             groupvars="Treatment",
+             conf.interval = 0.95)#creatingg a new summery dataframe gor plotting purposes
+datai <- as.data.frame.list(PWDensity$groups)# changing the tukey result for this variable into a dataframe- in order to extract the group from it, whitch shows wether two levels within the tested variable differ significatly
+datai$Treatment <- row.names(PWDensity$groups)#adding a column for treatmet datai, for the next step
+Data3 <- merge(Data3,datai[,-1], by="Treatment")# assigning this into the summery data
+offset.v = -3 # offsets for mean letters 
+offset.h = 0.8
+plot_3 <- ggplot(Data3,
+            aes(x = Treatment, y = Density,
+                ymax=2.0, ymin=0.0))  +
+            geom_bar(stat="identity", fill= "dark blue",
+colour = "blue", width = 0.7) + geom_errorbar(aes(ymax=Density+se, ymin=Density-se),
+width=0.2, size=0.5, color="black") + geom_text(aes(label=groups,
+                      hjust=1, vjust=-1)) +
+            labs(x = "Different ratio of Both Variants ShA and ShB",
+                 y = "Mean of Clusters Density (A.U/cluster area size(um^2))")  +
+             ggtitle("Mean of Clusters Density in different ShB/ShA ratios") +
+            theme_bw()  +
+            theme(plot.title = element_text(size = rel(1.2),
+                  face = "bold", vjust = 1.5),
+                  axis.title = element_text(face = "bold"),
+                  axis.title.y = element_text(vjust= 1.8),
+                  axis.title.x = element_text(vjust= -0.5),
+                  axis.text.x=element_text( size=7),
+                  panel.border = element_rect(colour="black"),
+                  panel.grid.major = element_blank(), 
+                  panel.grid.minor = element_blank(),
+                  panel.background = element_blank(), 
+                  axis.line = element_line(colour = "black"))
+print(plot_3+  annotate("text", label = "", y = 300000,x=5, size = 3))
+write.csv(Data3,"DensitySummery.csv", row.names = TRUE)}
+```
+
+Summerizing the data for the variable CellSurfaceExpression, calculation the standard error for a bar plot with se.
+the sammerized data will be used to create bar plot with standard error shown in the bars and also will be used for creating a boxplot for this variable.
+"Area" the summerized data will be saved in a diiferent path as a csv file
+
+```{r}
+if ("Area" %in% VariableToAnalyze){ #if the user wants to analyze this variable, the results show
+Data4 = summarySE(data=Data2Handle,
+             "Area",
+             groupvars="Treatment",
+             conf.interval = 0.95)#creatingg a new summery dataframe gor plotting purposes
+datai <- as.data.frame.list(PWArea$groups)# changing the tukey result for this variable into a dataframe- in order to extract the group from it, whitch shows wether two levels within the tested variable differ significatly
+datai$Treatment <- row.names(PWArea$groups)#adding a column for treatmet datai, for the next step
+Data4 <- merge(Data4,datai[,-1], by="Treatment")# assigning this into the summery data
+offset.v = -3 # offsets for mean letters 
+offset.h = 0.8 # offsets for mean letters
+plot_4 <- ggplot(Data4,
+            aes(x = Treatment, y = Area,
+                ymax=0.11, ymin=0.0))  +
+            geom_bar(stat="identity", fill="gray",
+colour = "black", width = 0.7) + geom_errorbar(aes(ymax=Area+se, ymin=Area-se),
+width=0.2, size=0.5, color="black") + geom_text(aes(label=groups,
+                      hjust=0.5, vjust=-1.5)) + 
+            labs(x = "Different ratio of Both Variants ShA and ShB",
+                 y = "Mean of Clusters Area size(um^2)")  +
+             ggtitle("Mean of Clusters Area Size in different ShB/ShA ratios") +
+            theme_bw()  +
+            theme(plot.title = element_text(size = rel(1.2),
+                  face = "bold", vjust = 1.5),
+                  axis.title = element_text(face = "bold"),
+                  axis.title.y = element_text(vjust= 1.8),
+                  axis.title.x = element_text(vjust= -0.5),
+                  axis.text.x=element_text( size=7),
+                  panel.border = element_rect(colour="black"),
+                  panel.grid.major = element_blank(), 
+                  panel.grid.minor = element_blank(),
+                  panel.background = element_blank(), 
+                  axis.line = element_line(colour = "black"))
+print(plot_4+  annotate("text", label = "", y = 0.19,x=5, size = 3))
+write.csv(Data4,"AreaSummery.csv", row.names = TRUE)}
+```
+
+Histograms plot for all treatment to see the relative frequency and the distribution of each treatment relativly to others- this is done in the same plot- Both variables are shown in those histograms "Density" and "Area"-VariableToAnalyze
+
+```{r}
+if ("Density" %in% VariableToAnalyze){ #if the user wants to analyze this variable, the results show
+hist_allDensity <- ggplot(Data2Handle, aes(Density/100000, ymax=1.0, ymin=0.0)) +
+  facet_wrap(~Treatment, scales = 'free_x') +
+  geom_histogram(aes(y = stat(count) / sum(count),color = Treatment, fill = Treatment))+  
+            theme(legend.position="none", plot.title = element_text(size = rel(1.2),
+                  face = "bold", vjust = 1.5, hjust = 0.5),
+                  axis.title = element_text(face = "bold"),
+                  axis.title.y = element_text(vjust= 1.8),
+                  axis.title.x = element_text(vjust= -0.5),
+                  axis.text.x=element_text( size=7),
+                  panel.grid.major = element_blank(), 
+                  panel.background = element_blank(),
+                  plot.caption = element_text(hjust = 0.5),
+                  axis.line = element_line(colour = "black"))+
+            labs(x = "Density-Integrated Intinsity*10^5 ((A.U)/cluster area size(um^2))",
+                 y = "Relative frequency")  +
+             ggtitle("Relative frequency of Clusters Density")
+hist_allDensity}
+if ("Area" %in% VariableToAnalyze){ #if the user wants to analyze this variable, the results show
+hist_allArea <- ggplot(Data2Handle, aes(Area, ymax=1.0, ymin=0.0)) +
+  facet_wrap(~Treatment, scales = 'free_x') +
+  geom_histogram(aes(y = stat(count) / sum(count),color = Treatment, fill = Treatment))+  
+            theme(legend.position="none", plot.title = element_text(size = rel(1.2),
+                  face = "bold", vjust = 1.5, hjust = 0.5),
+                  axis.title = element_text(face = "bold"),
+                  axis.title.y = element_text(vjust= 1.8),
+                  axis.title.x = element_text(vjust= -0.5),
+                  axis.text.x=element_text( size=7),
+                  panel.grid.major = element_blank(), 
+                  panel.background = element_blank(),
+                  plot.caption = element_text(hjust = 0.5),
+                  axis.line = element_line(colour = "black"))+
+            labs(x = "Mean of Clusters Area size(um^2)",
+                 y = "Relative frequency")  +
+             ggtitle("Relative frequency of Clusters Area Size Mean(um^2)") 
+hist_allArea}
+```
+
+just in case- another plot to see the variables
+
+```{r eval=FALSE, include=FALSE}
+
+df4 <- Data2Handle %>%
+  add_column(.after=7,ratio = NA)%>%
+  mutate(ratio= ifelse( Treatment =="4ShA+0ShB+s97",1,
+                            ifelse(Treatment=="0ShA+4ShB+s97", 0,
+                                   ifelse(Treatment=="2ShA+2ShB+s97",1/2,
+                                          ifelse(Treatment=="1ShA+3ShB+s97",1/4,
+                                                 ifelse(Treatment=='3ShA+1ShB+s97',3/4,ratio))))))
+BoxbDensity <- ggplot(df4, aes(x=ratio, y=Density/1000000, fill = Treatment)) + 
+  geom_boxplot() + theme(legend.position="none", plot.title = element_text(size = rel(1.2),
+                  face = "bold", vjust = 1.5, hjust = 0.5),
+                  axis.title = element_text(face = "bold"),
+                  axis.title.y = element_text(vjust= 1.8),
+                  axis.title.x = element_text(vjust= -0.5),
+                  axis.text.x=element_text( size=7),
+                  panel.grid.major = element_blank(), 
+                  panel.background = element_blank(),
+                  plot.caption = element_text(hjust = 0.5),
+                  axis.line = element_line(colour = "black"))+
+            labs(x = "Different ratio of Both Variants ShA and ShB (ShB/ShA)",
+                 y = "Density-Integrated Intinsity*10^6 ((A.U)/cluster area size(um^2))")  +
+             ggtitle("Clusters Density in Different Ratios of ShB/ShA variants")
+BoxbDensity
+
+BoxbArea <- ggplot(df4, aes(x=ratio, y=Area, fill = Treatment)) + 
+  geom_boxplot() + theme(legend.position="none", plot.title = element_text(size = rel(1.2),
+                  face = "bold", vjust = 1.5, hjust = 0.5),
+                  axis.title = element_text(face = "bold"),
+                  axis.title.y = element_text(vjust= 1.8),
+                  axis.title.x = element_text(vjust= -0.5),
+                  axis.text.x=element_text( size=7),
+                  panel.grid.major = element_blank(), 
+                  panel.background = element_blank(),
+                  plot.caption = element_text(hjust = 0.5),
+                  axis.line = element_line(colour = "black"))+
+            labs(x = "Different ratio of Both Variants ShA and ShB",
+                 y = "Mean of Cluster Area Size(um^2))")  +
+             ggtitle("Mean of Cluster Area Size in Different Ratios of ShB/ShA variants")
+BoxbArea
+
+```
+
+last plots are shown, boxplot, while the x-axis this time is shown as a numeric (Ratio of both variants shown as ShB/ShA).That is to see if there is a tendency/correlation between the transfiction ratio and the Density/Area)
+
+```{r}
+if ("Density" %in% VariableToAnalyze){ #if the user wants to analyze this variable, the results show
+df5 <- Data3 %>%
+  add_column(.after=7,ratio = NA)%>%
+  mutate(ratio= ifelse( Treatment =="4ShA+0ShB+s97",1,
+                            ifelse(Treatment=="0ShA+4ShB+s97", 0,
+                                   ifelse(Treatment=="2ShA+2ShB+s97",1/2,
+                                          ifelse(Treatment=="1ShA+3ShB+s97",1/4,
+                                                 ifelse(Treatment=='3ShA+1ShB+s97',3/4,ratio))))))
+# for the summery data of Density: a new column is added, a new presentation of the treatment as a ratio of the both variants
+boxDen <- ggplot(df5, aes(x = ratio,fill = ratio)) +
+  geom_boxplot(aes(group = ratio,
+      lower = Density - se, 
+      upper = Density + se, 
+      middle = Density, 
+      ymin = Density - 3*se, 
+      ymax = Density + 3*se),
+    stat = "identity") +
+            labs(x = "Different ratio of Both Variants ShA and ShB (ShB/ShA)",
+                 y = "Mean of Clusters Density (A.U/cluster area size(um^2))")  +
+             ggtitle("Mean of Clusters Density as a function of ShB/ShA ratio")+ theme(legend.position="right")
+boxDen
+}
+if ("Area" %in% VariableToAnalyze){ #if the user wants to analyze this variable, the results show
+df6 <- Data4 %>%
+  add_column(.after=7,ratio = NA)%>%
+  mutate(ratio= ifelse( Treatment =="4ShA+0ShB+s97",1,
+                            ifelse(Treatment=="0ShA+4ShB+s97", 0,
+                                   ifelse(Treatment=="2ShA+2ShB+s97",1/2,
+                                          ifelse(Treatment=="1ShA+3ShB+s97",1/4,
+                                                 ifelse(Treatment=='3ShA+1ShB+s97',3/4,ratio))))))
+# for the summery data of Area: a new column is added, a new presentation of the treatment as a ratio of the both variants
+#Plotting a boxplot of Area variable whereas the x-axis this time is a numeric variable, with the standard error shown
+boxArea <- ggplot(df6, aes(x = ratio,fill = ratio)) +
+  geom_boxplot(aes(group = ratio,
+      lower = Area - se, 
+      upper = Area + se, 
+      middle = Area, 
+      ymin = Area - 3*se, 
+      ymax = Area + 3*se),
+    stat = "identity") +
+            labs(x = "Different Ratio of Both Variants ShA and ShB (ShB/ShA)",
+                 y = "Mean of Cluster Area Size(um^2))")  +
+             ggtitle("Mean of Cluster Area Size in Different Ratios of ShB/ShA variants") + theme(legend.position="right")
+boxArea }
+
+```
+
+Density files
+
+```{r}
+write.xlsx(Data2Handle[Data2Handle$Treatment=="4ShA+0ShB+s97",]$Area,"Area_4ShA+0ShB+s97_sum.xlsx")
+write.xlsx(Data2Handle[Data2Handle$Treatment=="3ShA+1ShB+s97",]$Area,"Area_3ShA+1ShB+s97_sum.xlsx")
+write.xlsx(Data2Handle[Data2Handle$Treatment=="2ShA+2ShB+s97",]$Area,"Area_2ShA+2ShB+s97_sum.xlsx")
+write.xlsx(Data2Handle[Data2Handle$Treatment=="1ShA+3ShB+s97",]$Area,"Area_1ShA+3ShB+s97_sum.xlsx")
+write.xlsx(Data2Handle[Data2Handle$Treatment=="0ShA+4ShB+s97",]$Area,"Area_0ShA+4ShB+s97_sum.xlsx")
+
+write.xlsx(Data2Handle[Data2Handle$Treatment=="4ShA+0ShB+s97",]$Density,"Density_4ShA+0ShB+s97_sum.xlsx")
+write.xlsx(Data2Handle[Data2Handle$Treatment=="3ShA+1ShB+s97",]$Density,"Density_3ShA+1ShB+s97_sum.xlsx")
+write.xlsx(Data2Handle[Data2Handle$Treatment=="2ShA+2ShB+s97",]$Density,"Density_2ShA+2ShB+s97_sum.xlsx")
+write.xlsx(Data2Handle[Data2Handle$Treatment=="1ShA+3ShB+s97",]$Density,"Density_1ShA+3ShB+s97_sum.xlsx")
+write.xlsx(Data2Handle[Data2Handle$Treatment=="0ShA+4ShB+s97",]$Density,"Density_0ShA+4ShB+s97_sum.xlsx")
+
+
+write.xlsx(CellsDataC[CellsDataC$Treatment=="0ShA+4ShB+s97",]$FractionofChannelsinClusters,"FractionofChannelsinClusters_0ShA+4ShB+s97_sum.xlsx")
+write.xlsx(CellsDataC[CellsDataC$Treatment=="1ShA+3ShB+s97",]$FractionofChannelsinClusters,"FractionofChannelsinClusters_1ShA+3ShB+s97_sum.xlsx")
+write.xlsx(CellsDataC[CellsDataC$Treatment=="2ShA+2ShB+s97",]$FractionofChannelsinClusters,"FractionofChannelsinClusters_2ShA+2ShB+s97_sum.xlsx")
+write.xlsx(CellsDataC[CellsDataC$Treatment=="3ShA+1ShB+s97",]$FractionofChannelsinClusters,"FractionofChannelsinClusters_3ShA+1ShB+s97_sum.xlsx")
+write.xlsx(CellsDataC[CellsDataC$Treatment=="4ShA+0ShB+s97",]$FractionofChannelsinClusters,"FractionofChannelsinClusters_4ShA+0ShB+s97_sum.xlsx")
+
+
+
+
+write.xlsx(CellsDataC[CellsDataC$Treatment=="0ShA+4ShB+s97",]$CellSurfaceExpression,"CellSurfaceExpression_0ShA+4ShB+s97_sum.xlsx")
+write.xlsx(CellsDataC[CellsDataC$Treatment=="1ShA+3ShB+s97",]$CellSurfaceExpression,"CellSurfaceExpression_1ShA+3ShB+s97_sum.xlsx")
+write.xlsx(CellsDataC[CellsDataC$Treatment=="2ShA+2ShB+s97",]$CellSurfaceExpression,"CellSurfaceExpression_2ShA+2ShB+s97_sum.xlsx")
+write.xlsx(CellsDataC[CellsDataC$Treatment=="3ShA+1ShB+s97",]$CellSurfaceExpression,"CellSurfaceExpression_3ShA+1ShB+s97_sum.xlsx")
+write.xlsx(CellsDataC[CellsDataC$Treatment=="4ShA+0ShB+s97",]$CellSurfaceExpression,"CellSurfaceExpression_4ShA+0ShB+s97_sum.xlsx")
+
+
+Data9 = summarySE(data=CellsDataC,
+             "FractionofChannelsinClusters",
+             groupvars="Treatment",
+             conf.interval = 0.95)#creatingg a new summery dataframe gor plotting purposes
+datai <- as.data.frame.list(PWFractionofChannelsinClusters$groups)# changing the tukey result for this variable into a dataframe- in order to extract the group from it, whitch shows wether two levels within the tested variable differ significatly
+datai$Treatment <- row.names(PWFractionofChannelsinClusters$groups)#adding a column for treatmet datai, for the next step
+Data9 <- merge(Data9,datai[,-1], by="Treatment")
+write.csv(Data9,"FractionofChannelsinClusters.csv", row.names = TRUE)
+```
+
+A simple linear regression will be performed in this chunk, testing for whether the expected values of the treatment predicts successfully the experimental observed means in each treatment.
+creating new summarized data if the variables Area/Density had been transformed
+
+```{r}
+if ("Density" %in% VariableToAnalyze){ #if the user wants to analyze this variable, the results show
+  if ("Density.trans" %in% colnames(Data2Handle)){ #if the data for variable Density had been transformed, there is a a need to create a new summarized data frame with the transformed values- since linear regression assume normality and homogenty of variances
+  Data5 = summarySE(data=Data2Handle,
+             "Density.trans",
+             groupvars="Treatment",
+             conf.interval = 0.95) #creatingg a new summery dataframe gor plotting purposes
+datai <- as.data.frame.list(PWDensity$groups)# changing the tukey result for this variable into a dataframe- in order to extract the group from it, whitch shows wether two levels within the tested variable differ significatly
+datai$Treatment <- row.names(PWDensity$groups)#adding a column for treatmet datai, for the next step
+Data5 <- merge(Data5,datai[,-1], by="Treatment")# assigning this into the summery data
+names(Data5)[names(Data5) == "Density.trans"] <- "Density" #changing the name of the column, so the rest if thhe code could recognize both if the conditions- transformed/not transformed data
+df5 <- Data5 %>%
+  add_column(.after=7,ratio = NA)%>%
+  mutate(ratio= ifelse( Treatment =="4ShA+0ShB+s97",1,
+                            ifelse(Treatment=="0ShA+4ShB+s97", 0,
+                                   ifelse(Treatment=="2ShA+2ShB+s97",1/2,
+                                          ifelse(Treatment=="1ShA+3ShB+s97",1/4,
+                                                 ifelse(Treatment=='3ShA+1ShB+s97',3/4,ratio)))))) #adding the ratio as number according to the name of the treatment in a new column.
+}
+equation1expD <- df5$ratio * df5$Density[5]	+ (1-df5$ratio)* df5$Density[1] #calculating the expected values for each treatment for the Density 
+df5$equation1expD <- equation1expD # inserting these expected values to df5
+modelD <- lm(Density~equation1expD, data=df5) #performing linear regression to check whether the expected values predict the response-the experimental data.
+print(summary(modelD)) #showing the results
+print(summ(modelD)) #showing the results in another way
+effect_plot(modelD, pred = equation1expD, interval = TRUE, plot.points = TRUE) #presenting the result in a graphical way
+}
+if ("Area" %in% VariableToAnalyze){ #if the user wants to analyze this variable, the results show
+  if ("Area.trans" %in% colnames(Data2Handle)){ #if the data for variable Area had been transformed, there is a a need to create a new summarized data frame with the transformed values- since linear regression assume normality and homogeneity of variances
+  Data6 = summarySE(data=Data2Handle,
+             "Area.trans",
+             groupvars="Treatment",
+             conf.interval = 0.95) #creatingg a new summery dataframe gor plotting purposes
+datai <- as.data.frame.list(PWDensity$groups) # changing the tukey result for this variable into a dataframe- in order to extract the group from it, whitch shows wether two levels within the tested variable differ significatly
+datai$Treatment <- row.names(PWDensity$groups)#adding a column for treatmet datai, for the next step
+Data6 <- merge(Data6,datai[,-1], by="Treatment")# assigning this into the summery data
+names(Data6)[names(Data6) == "Area.trans"] <- "Area" #changing the name of the column, so the rest if thhe code could recognize both if the conditions- transformed/not transformed data
+df6 <- Data6 %>%
+  add_column(.after=7,ratio = NA)%>%
+  mutate(ratio= ifelse( Treatment =="4ShA+0ShB+s97",1,
+                            ifelse(Treatment=="0ShA+4ShB+s97", 0,
+                                   ifelse(Treatment=="2ShA+2ShB+s97",1/2,
+                                          ifelse(Treatment=="1ShA+3ShB+s97",1/4,
+                                                 ifelse(Treatment=='3ShA+1ShB+s97',3/4,ratio)))))) #adding the ratio as number according to the name of the treatment in a new column.
+}
+  equation1expA <- df6$ratio * df6$Area[5]	+ (1-df6$ratio)* df6$Area[1] #calculating the expected values for each treatment for the Area
+df6$equation1expA <- equation1expA # inserting these expected values to df6
+modelA <- lm(Area~equation1expA, data=df6) #performing linear regression to check whether the expected values predict the response-the experimental data.
+print(summary(modelA)) #showing the results
+print(summ(modelA))#showing the results in another way
+effect_plot(modelA, pred = equation1expA, interval = TRUE, plot.points = TRUE) #presenting the result in a graphical way
+}
+```
+
+new
+
+```{r}
+
+
+hist_allDensity_p <- ggplot(Data2Handle, aes(Density/1000000, ymax=1.0, ymin=0.0)) +
+  facet_wrap(~Treatment, scales = 'free_x') +
+  geom_histogram(aes(y = stat(count) / sum(count),color = CellNumber, fill = CellNumber))+  
+            theme(legend.position="none", plot.title = element_text(size = rel(1.2),
+                  face = "bold", vjust = 1.5, hjust = 0.5),
+                  axis.title = element_text(face = "bold"),
+                  axis.title.y = element_text(vjust= 1.8),
+                  axis.title.x = element_text(vjust= -0.5),
+                  axis.text.x=element_text( size=7),
+                  panel.grid.major = element_blank(), 
+                  panel.background = element_blank(),
+                  plot.caption = element_text(hjust = 0.5),
+                  axis.line = element_line(colour = "black"))+
+            labs(x = "Density-Integrated Intinsity*10^6 ((A.U)/cluster area size(um^2))",
+                 y = "Relative frequency")  +
+             ggtitle("Relative frequency of Clusters Density")
+hist_allDensity_p
+```
+
+Here the project ends :) 
