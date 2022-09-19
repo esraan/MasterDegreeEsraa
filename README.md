@@ -1,11 +1,11 @@
-## MasterDegreeEsraa
+# MasterDegreeEsraa
 
 
 This project has 3 files:
 
 
 
-# ClusteringAnalysisProjectfinal_Dec with pvalues.Rmd
+## ClusteringAnalysisProjectfinal_Dec with pvalues.Rmd
 
 
 
@@ -13,12 +13,12 @@ Autumatic analysis of the data in R, with plots and screeing the data. Violation
 
 
 
-# ClusteringAnalysisProjectfinal_Dec with pvalues.nb.html
+## ClusteringAnalysisProjectfinal_Dec with pvalues.nb.html
 
 Results of the statistical analysis attached 
 
 
 
-# freq calculator.py
+## freq calculator.py
 
 The frequency calculator of the area size and the density distibution
